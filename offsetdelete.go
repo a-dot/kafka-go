@@ -104,3 +104,36 @@ func (c *Client) OffsetDelete(ctx context.Context, req *OffsetDeleteRequest) (*O
 
 	return res, nil
 }
+
+// OffsetDeleteTopics deletes the offsets, for all partitions, for all topics specified and returns
+// a non-nil error if an error occurred.
+func (c *Client) OffsetDeleteTopics(ctx context.Context, groupID string, topics []string) error {
+	req := MetadataRequest{
+		Topics:                 topics,
+		AllowAutoTopicCreation: false,
+	}
+
+	resp, err := c.Metadata(ctx, &req)
+	if err != nil {
+		return err
+	}
+
+	odrTopics := make(map[string][]int)
+
+	for _, topic := range resp.Topics {
+		partitions := make([]int, len(topic.Partitions))
+
+		for i, p := range topic.Partitions {
+			partitions[i] = p.ID
+		}
+
+		odrTopics[topic.Name] = partitions
+	}
+
+	_, err = c.OffsetDelete(ctx, &OffsetDeleteRequest{
+		GroupID: groupID,
+		Topics:  odrTopics,
+	})
+
+	return err
+}

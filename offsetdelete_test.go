@@ -10,11 +10,86 @@ import (
 )
 
 func TestClientDeleteOffset(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+
 	topic := makeTopic()
 	client, shutdown := newLocalClientWithTopic(topic, 3)
 	defer shutdown()
-	now := time.Now()
 
+	groupID := genTestRecords(t, client, ctx, topic)
+
+	// Remove offsets
+	odr, err := client.OffsetDelete(ctx, &OffsetDeleteRequest{
+		GroupID: groupID,
+		Topics:  map[string][]int{topic: {0, 1, 2}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if odr.Error != nil {
+		t.Error(odr.Error)
+	}
+
+	// Fetch the offsets again
+	ofr, err := client.OffsetFetch(ctx, &OffsetFetchRequest{
+		GroupID: groupID,
+		Topics:  map[string][]int{topic: {0, 1, 2}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if ofr.Error != nil {
+		t.Error(ofr.Error)
+	}
+
+	for _, r := range ofr.Topics[topic] {
+		if r.CommittedOffset != -1 {
+			t.Fatalf("expected committed offset to be -1; got: %v for partition: %v", r.CommittedOffset, r.Partition)
+		}
+	}
+}
+
+func TestClientDeleteOffsetTopics(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+
+	topic := makeTopic()
+	client, shutdown := newLocalClientWithTopic(topic, 3)
+	defer shutdown()
+
+	groupID := genTestRecords(t, client, ctx, topic)
+
+	// Remove offsets
+	err := client.OffsetDeleteTopics(ctx, groupID, []string{topic})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Fetch the offsets again
+	ofr, err := client.OffsetFetch(ctx, &OffsetFetchRequest{
+		GroupID: groupID,
+		Topics:  map[string][]int{topic: {0, 1, 2}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if ofr.Error != nil {
+		t.Error(ofr.Error)
+	}
+
+	for _, r := range ofr.Topics[topic] {
+		if r.CommittedOffset != -1 {
+			t.Fatalf("expected committed offset to be -1; got: %v for partition: %v", r.CommittedOffset, r.Partition)
+		}
+	}
+}
+
+func genTestRecords(t *testing.T, client *Client, ctx context.Context, topic string) string {
+	now := time.Now()
 	const N = 10 * 3
 	records := make([]Record, 0, N)
 	for i := 0; i < N; i++ {
@@ -120,35 +195,5 @@ func TestClientDeleteOffset(t *testing.T) {
 		}
 	}
 
-	// Remove offsets
-	odr, err := client.OffsetDelete(ctx, &OffsetDeleteRequest{
-		GroupID: groupID,
-		Topics:  map[string][]int{topic: {0, 1, 2}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if odr.Error != nil {
-		t.Error(odr.Error)
-	}
-
-	// Fetch the offsets again
-	ofr, err = client.OffsetFetch(ctx, &OffsetFetchRequest{
-		GroupID: groupID,
-		Topics:  map[string][]int{topic: {0, 1, 2}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if ofr.Error != nil {
-		t.Error(res.Error)
-	}
-
-	for _, r := range ofr.Topics[topic] {
-		if r.CommittedOffset != -1 {
-			t.Fatalf("expected committed offset to be -1; got: %v for partition: %v", r.CommittedOffset, r.Partition)
-		}
-	}
+	return groupID
 }
